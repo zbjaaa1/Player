@@ -178,9 +178,11 @@ public class PlayerActivity extends Activity {
     private boolean alive;
     public static boolean focusPlay = false;
     private Uri nextUri;
+    private Uri lastUri;
     private static boolean isTvBox;
     public static boolean locked = false;
     private Thread nextUriThread;
+    private Thread lastUriThread;
     public Thread frameRateSwitchThread;
 
     public static boolean restoreControllerTimeout = false;
@@ -647,7 +649,8 @@ public class PlayerActivity extends Activity {
                     if (player == null || !player.isPlaying()) {
                         playerView.setControllerShowTimeoutMs(-1);
                     } else {
-                        playerView.setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
+                        //playerView.setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
+                        playerView.setControllerShowTimeoutMs(1);
                     }
                 }
 
@@ -728,7 +731,7 @@ public class PlayerActivity extends Activity {
             playerView.removeCallbacks(barsHider);
             Utils.toggleSystemUi(this, playerView, true);
         }
-        initializePlayer();
+        initializePlayer(true);
         updateButtonRotation();
     }
 
@@ -917,6 +920,18 @@ public class PlayerActivity extends Activity {
                     }
                 }
                 break;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                //if (!controllerVisibleFully){
+                if (lastUri != null) {
+                    return true;
+                }
+                break;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                //if (!controllerVisibleFully){
+                if (nextUri != null) {
+                    return true;
+                }
+                break;
             case KeyEvent.KEYCODE_UNKNOWN:
                 return super.onKeyDown(keyCode, event);
             default:
@@ -944,6 +959,20 @@ public class PlayerActivity extends Activity {
             case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
                 if (!isScrubbing) {
                     playerView.postDelayed(playerView.textClearRunnable, 1000);
+                }
+                break;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                //if (!controllerVisibleFully){
+                if (lastUri != null) {
+                    skipToLast();
+                    return true;
+                }
+                break;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                //if (!controllerVisibleFully){
+                if (nextUri != null) {
+                    skipToNext();
+                    return true;
                 }
                 break;
         }
@@ -1174,8 +1203,12 @@ public class PlayerActivity extends Activity {
         uri = Utils.convertToUTF(this, uri);
         mPrefs.updateSubtitle(uri);
     }
-
+    
     public void initializePlayer() {
+        initializePlayer(false);
+    }
+
+    public void initializePlayer(boolean load) {
         boolean isNetworkUri = Utils.isSupportedNetworkUri(mPrefs.mediaUri);
         haveMedia = mPrefs.mediaUri != null;
 
@@ -1314,7 +1347,7 @@ public class PlayerActivity extends Activity {
                 MediaItem.SubtitleConfiguration subtitle = SubtitleUtils.buildSubtitle(this, mPrefs.subtitleUri, null, true);
                 mediaItemBuilder.setSubtitleConfigurations(Collections.singletonList(subtitle));
             }
-            player.setMediaItem(mediaItemBuilder.build(), mPrefs.getPosition());
+            player.setMediaItem(mediaItemBuilder.build(), load ? mPrefs.getPosition() : 0);
 
             try {
                 if (loudnessEnhancer != null) {
@@ -1331,9 +1364,11 @@ public class PlayerActivity extends Activity {
 
             updateLoading(true);
 
-            if (mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial) {
+            /*if (mPrefs.getPosition() == 0L || apiAccess || apiAccessPartial) {
                 play = true;
-            }
+            }*/
+            
+            play = true;
 
             if (apiTitle != null) {
                 titleView.setText(apiTitle);
@@ -1358,6 +1393,17 @@ public class PlayerActivity extends Activity {
                     }
                 });
                 nextUriThread.start();
+                if (lastUriThread != null) {
+                    lastUriThread.interrupt();
+                }
+                lastUri = null;
+                lastUriThread = new Thread(() -> {
+                    Uri uri = findLast();
+                    if (!Thread.currentThread().isInterrupted()) {
+                        lastUri = uri;
+                    }
+                });
+                lastUriThread.start();
             }
 
             player.setHandleAudioBecomingNoisy(!isTvBox);
@@ -1372,7 +1418,8 @@ public class PlayerActivity extends Activity {
         if (restorePlayState) {
             restorePlayState = false;
             playerView.showController();
-            playerView.setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
+            //playerView.setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
+            playerView.setControllerShowTimeoutMs(1);
             player.setPlayWhenReady(true);
         }
     }
@@ -1453,6 +1500,7 @@ public class PlayerActivity extends Activity {
 
             if (!isScrubbing) {
                 if (isPlaying) {
+                /*
                     if (shortControllerTimeout) {
                         playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT / 3);
                         shortControllerTimeout = false;
@@ -1460,6 +1508,8 @@ public class PlayerActivity extends Activity {
                     } else {
                         playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT);
                     }
+                    */
+                    playerView.setControllerShowTimeoutMs(1);
                 } else {
                     playerView.setControllerShowTimeoutMs(-1);
                 }
@@ -2062,6 +2112,45 @@ public class PlayerActivity extends Activity {
         return null;
     }
 
+    Uri findLast() {
+        // TODO: Unify with searchSubtitles()
+        if (mPrefs.scopeUri != null || isTvBox) {
+            DocumentFile video = null;
+            File videoRaw = null;
+
+            if (!isTvBox && mPrefs.scopeUri != null) {
+                if ("com.android.externalstorage.documents".equals(mPrefs.mediaUri.getHost())) {
+                    // Fast search based on path in uri
+                    video = SubtitleUtils.findUriInScope(this, mPrefs.scopeUri, mPrefs.mediaUri);
+                } else {
+                    // Slow search based on matching metadata, no path in uri
+                    // Provider "com.android.providers.media.documents" when using "Videos" tab in file picker
+                    DocumentFile fileScope = DocumentFile.fromTreeUri(this, mPrefs.scopeUri);
+                    DocumentFile fileMedia = DocumentFile.fromSingleUri(this, mPrefs.mediaUri);
+                    video = SubtitleUtils.findDocInScope(fileScope, fileMedia);
+                }
+            } else if (isTvBox) {
+                videoRaw = new File(mPrefs.mediaUri.getSchemeSpecificPart());
+                video = DocumentFile.fromFile(videoRaw);
+            }
+
+            if (video != null) {
+                DocumentFile next;
+                if (!isTvBox) {
+                    next = SubtitleUtils.findLast(video);
+                } else {
+                    File parentRaw = videoRaw.getParentFile();
+                    DocumentFile dir = DocumentFile.fromFile(parentRaw);
+                    next = SubtitleUtils.findLast(video, dir);
+                }
+                if (next != null) {
+                    return next.getUri();
+                }
+            }
+        }
+        return null;
+    }
+    
     void askForScope(boolean loadSubtitlesOnCancel, boolean skipToNextOnCancel) {
         final AlertDialog.Builder builder = new AlertDialog.Builder(PlayerActivity.this);
         builder.setMessage(String.format(getString(R.string.request_scope), getString(R.string.app_name)));
@@ -2212,9 +2301,17 @@ public class PlayerActivity extends Activity {
     }
 
     void skipToNext() {
-        if (nextUri != null) {
+        skipTo(nextUri);
+    }
+
+    void skipToLast() {
+        skipTo(lastUri);
+    }
+    
+    void skipTo(Uri uri) {
+        if (uri != null) {
             releasePlayer();
-            mPrefs.updateMedia(this, nextUri, null);
+            mPrefs.updateMedia(this, uri, null);
             searchSubtitles();
             initializePlayer();
         }

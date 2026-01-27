@@ -456,41 +456,7 @@ class Utils {
     }
 
     public static boolean isTvBox(Context context) {
-        final PackageManager pm = context.getPackageManager();
-
-        // TV for sure
-        UiModeManager uiModeManager = (UiModeManager) context.getSystemService(UI_MODE_SERVICE);
-        if (uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
-            return true;
-        }
-
-        if (pm.hasSystemFeature(FEATURE_FIRE_TV)) {
-            return true;
-        }
-
-        // Missing Files app (DocumentsUI) means box (some boxes still have non functional app or stub)
-        if (!hasSAFChooser(pm)) {
-            return true;
-        }
-
-        // Legacy storage no longer works on Android 11 (level 30)
-        if (Build.VERSION.SDK_INT < 30) {
-            // (Some boxes still report touchscreen feature)
-            if (!pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) && !pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
-                return true;
-            }
-
-            if (pm.hasSystemFeature("android.hardware.hdmi.cec")) {
-                return true;
-            }
-
-            if (Build.MANUFACTURER.equalsIgnoreCase("zidoo")) {
-                return true;
-            }
-        }
-
-        // Default: No TV - use SAF
-        return false;
+        return true;
     }
 
     public static boolean hasSAFChooser(final PackageManager pm) {
