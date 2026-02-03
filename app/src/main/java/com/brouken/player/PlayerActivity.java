@@ -753,6 +753,9 @@ public class PlayerActivity extends Activity {
 
     @Override
     public void onStop() {
+        if (!isChangingConfigurations()) {
+            finishAndRemoveTask();
+        }
         super.onStop();
         alive = false;
         if (Build.VERSION.SDK_INT >= 31) {
