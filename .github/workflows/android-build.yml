@@ -22,7 +22,7 @@ jobs:
       - run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${GITHUB_WORKSPACE}/keystore.jks
 
       - run: ./gradlew assembleRelease assembleDebug
-          -PabiFilter=armeabi-v7a
+          
           -Pandroid.injected.signing.store.file=${GITHUB_WORKSPACE}/keystore.jks
           -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }}
           -Pandroid.injected.signing.key.alias=key
